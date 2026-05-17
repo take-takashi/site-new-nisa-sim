@@ -13,15 +13,30 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat("ja-JP", {
   currency: "JPY",
   maximumFractionDigits: 0,
 });
+const Y_AXIS_TICK_COUNT = 5;
 
 function formatCurrency(value: number): string {
   if (value >= 10_000) {
-    return `${(value / 10_000).toLocaleString("ja-JP", {
-      maximumFractionDigits: 1,
-    })}万円`;
+    return `${Math.round(value / 10_000).toLocaleString("ja-JP")}万円`;
   }
 
   return CURRENCY_FORMATTER.format(value);
+}
+
+function formatAxisCurrency(value: number): string {
+  if (value >= 10_000) {
+    return `${Math.round(value / 10_000).toLocaleString("ja-JP")}万円`;
+  }
+
+  return CURRENCY_FORMATTER.format(value);
+}
+
+function getNiceStep(value: number): number {
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalizedValue = value / magnitude;
+  const normalizedStep = [1, 2, 2.5, 5, 10].find((candidate) => normalizedValue <= candidate) ?? 10;
+
+  return normalizedStep * magnitude;
 }
 
 function simulateNisa(monthlyContribution: number, annualReturnRate: number, years: number) {
@@ -58,25 +73,42 @@ function buildPath(
   maxValue: number,
   width: number,
   height: number,
-  padding: number,
+  paddingX: number,
+  paddingY: number,
 ) {
-  const innerWidth = width - padding * 2;
-  const innerHeight = height - padding * 2;
+  const innerWidth = width - paddingX * 2;
+  const innerHeight = height - paddingY * 2;
   const denominator = Math.max(points.length - 1, 1);
 
   return points
     .map((point, index) => {
-      const x = padding + (index / denominator) * innerWidth;
-      const y = padding + innerHeight - (getValue(point) / maxValue) * innerHeight;
+      const x = paddingX + (index / denominator) * innerWidth;
+      const y = paddingY + innerHeight - (getValue(point) / maxValue) * innerHeight;
       return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
     })
     .join(" ");
+}
+
+function getPointPosition(
+  point: SimulationPoint,
+  years: number,
+  maxValue: number,
+  innerWidth: number,
+  innerHeight: number,
+  paddingX: number,
+  paddingY: number,
+) {
+  return {
+    x: paddingX + (point.year / years) * innerWidth,
+    y: paddingY + innerHeight - (point.value / maxValue) * innerHeight,
+  };
 }
 
 function App() {
   const [monthlyContribution, setMonthlyContribution] = useState(50_000);
   const [annualReturnRate, setAnnualReturnRate] = useState(5);
   const [years, setYears] = useState(20);
+  const [activeYear, setActiveYear] = useState<number | null>(null);
 
   const points = useMemo(
     () => simulateNisa(monthlyContribution, annualReturnRate, years),
@@ -86,18 +118,22 @@ function App() {
   const roomUsedRate = Math.min(finalPoint.principal / MAX_NISA_CONTRIBUTION, 1) * 100;
   const chartWidth = 920;
   const chartHeight = 360;
-  const chartPadding = 44;
-  const chartInnerWidth = chartWidth - chartPadding * 2;
-  const chartInnerHeight = chartHeight - chartPadding * 2;
-  const chartBottom = chartPadding + chartInnerHeight;
-  const maxValue = Math.max(...points.map((point) => point.value), 1);
+  const chartPaddingX = 96;
+  const chartPaddingY = 44;
+  const chartInnerWidth = chartWidth - chartPaddingX * 2;
+  const chartInnerHeight = chartHeight - chartPaddingY * 2;
+  const chartBottom = chartPaddingY + chartInnerHeight;
+  const rawMaxValue = Math.max(...points.map((point) => point.value), 1);
+  const tickStep = getNiceStep(rawMaxValue / Y_AXIS_TICK_COUNT);
+  const maxValue = tickStep * Y_AXIS_TICK_COUNT;
   const principalPath = buildPath(
     points,
     (point) => point.principal,
     maxValue,
     chartWidth,
     chartHeight,
-    chartPadding,
+    chartPaddingX,
+    chartPaddingY,
   );
   const valuePath = buildPath(
     points,
@@ -105,11 +141,12 @@ function App() {
     maxValue,
     chartWidth,
     chartHeight,
-    chartPadding,
+    chartPaddingX,
+    chartPaddingY,
   );
-  const chartTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
-    y: chartPadding + (1 - ratio) * (chartHeight - chartPadding * 2),
-    value: maxValue * ratio,
+  const chartTicks = Array.from({ length: Y_AXIS_TICK_COUNT + 1 }, (_, index) => ({
+    y: chartPaddingY + (1 - index / Y_AXIS_TICK_COUNT) * chartInnerHeight,
+    value: tickStep * index,
   }));
   const yearTickStep = Math.max(1, Math.ceil(years / 5));
   const yearTicks = Array.from(
@@ -120,8 +157,32 @@ function App() {
     ]),
   ).map((year) => ({
     year,
-    x: chartPadding + (year / years) * chartInnerWidth,
+    x: chartPaddingX + (year / years) * chartInnerWidth,
   }));
+  const activePoint = points.find((point) => point.year === activeYear) ?? finalPoint;
+  const activePosition = getPointPosition(
+    activePoint,
+    years,
+    maxValue,
+    chartInnerWidth,
+    chartInnerHeight,
+    chartPaddingX,
+    chartPaddingY,
+  );
+  const tooltipWidth = 190;
+  const tooltipHeight = 122;
+  const tooltipX = Math.min(
+    Math.max(activePosition.x + 16, chartPaddingX),
+    chartWidth - chartPaddingX - tooltipWidth,
+  );
+  const tooltipY = Math.max(activePosition.y - tooltipHeight - 14, chartPaddingY);
+
+  const selectNearestPoint = (clientX: number, svgElement: SVGSVGElement) => {
+    const { left, width } = svgElement.getBoundingClientRect();
+    const svgX = ((clientX - left) / width) * chartWidth;
+    const year = Math.round(((svgX - chartPaddingX) / chartInnerWidth) * years);
+    setActiveYear(Math.min(Math.max(year, 0), years));
+  };
 
   return (
     <main className="mx-auto w-[min(1180px,calc(100%-32px))] px-0 py-8 pt-10 max-[620px]:w-[min(100%-20px,1180px)] max-[620px]:pt-6">
@@ -130,7 +191,7 @@ function App() {
           <p className="mb-3 text-xs font-bold tracking-[0.08em] text-[#42635b] uppercase">
             Tax-free investment projection
           </p>
-          <h1 className="mb-4 text-[clamp(2.25rem,6vw,5rem)] leading-none font-bold tracking-normal text-[#0b2f2a]">
+          <h1 className="mb-4 text-[clamp(1.75rem,4vw,3.75rem)] leading-none font-bold tracking-normal text-[#0b2f2a] [word-break:keep-all]">
             新NISAシミュレーター
           </h1>
           <p className="mb-0 max-w-[720px] text-[1.05rem] leading-[1.8] text-[#52605d]">
@@ -140,19 +201,19 @@ function App() {
         <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-[#d7d2c4] bg-[#d7d2c4] max-[920px]:grid-cols-1">
           <div className="min-w-0 bg-[#fffdf8] p-[18px]">
             <span className="text-[0.84rem] font-bold text-[#66736f]">最終評価額</span>
-            <strong className="mt-2 block text-[clamp(1.15rem,2vw,1.7rem)] leading-[1.15] font-extrabold text-[#0f3d36]">
+            <strong className="mt-2 block text-[clamp(1rem,1.45vw,1.35rem)] leading-[1.15] font-extrabold whitespace-nowrap text-[#0f3d36]">
               {formatCurrency(finalPoint.value)}
             </strong>
           </div>
           <div className="min-w-0 bg-[#fffdf8] p-[18px]">
             <span className="text-[0.84rem] font-bold text-[#66736f]">投資元本</span>
-            <strong className="mt-2 block text-[clamp(1.15rem,2vw,1.7rem)] leading-[1.15] font-extrabold text-[#0f3d36]">
+            <strong className="mt-2 block text-[clamp(1rem,1.45vw,1.35rem)] leading-[1.15] font-extrabold whitespace-nowrap text-[#0f3d36]">
               {formatCurrency(finalPoint.principal)}
             </strong>
           </div>
           <div className="min-w-0 bg-[#fffdf8] p-[18px]">
             <span className="text-[0.84rem] font-bold text-[#66736f]">運用益</span>
-            <strong className="mt-2 block text-[clamp(1.15rem,2vw,1.7rem)] leading-[1.15] font-extrabold text-[#0f3d36]">
+            <strong className="mt-2 block text-[clamp(1rem,1.45vw,1.35rem)] leading-[1.15] font-extrabold whitespace-nowrap text-[#0f3d36]">
               {formatCurrency(finalPoint.gain)}
             </strong>
           </div>
@@ -247,30 +308,32 @@ function App() {
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             role="img"
             aria-label="資産推移"
+            onPointerMove={(event) => selectNearestPoint(event.clientX, event.currentTarget)}
+            onPointerLeave={() => setActiveYear(null)}
           >
             <title>新NISAの資産推移</title>
             {chartTicks.map((tick) => (
               <g key={tick.y}>
                 <line
-                  x1={chartPadding}
-                  x2={chartWidth - chartPadding}
+                  x1={chartPaddingX}
+                  x2={chartWidth - chartPaddingX}
                   y1={tick.y}
                   y2={tick.y}
                   className="stroke-[#e4ded0] stroke-1"
                 />
                 <text
                   className="fill-[#7a837f] text-[13px] font-bold max-[620px]:text-[11px]"
-                  x={chartPadding - 10}
+                  x={chartPaddingX - 12}
                   y={tick.y + 4}
                   textAnchor="end"
                 >
-                  {formatCurrency(tick.value)}
+                  {formatAxisCurrency(tick.value)}
                 </text>
               </g>
             ))}
             <line
-              x1={chartPadding}
-              x2={chartWidth - chartPadding}
+              x1={chartPaddingX}
+              x2={chartWidth - chartPaddingX}
               y1={chartBottom}
               y2={chartBottom}
               className="stroke-[#cfc8b8] stroke-2"
@@ -302,12 +365,86 @@ function App() {
               d={valuePath}
               className="fill-none stroke-[#177763] stroke-5 [stroke-linecap:round] [stroke-linejoin:round]"
             />
+            <g className={activeYear === null ? "opacity-0" : "opacity-100"}>
+              <line
+                x1={activePosition.x}
+                x2={activePosition.x}
+                y1={chartPaddingY}
+                y2={chartBottom}
+                className="stroke-[#177763] stroke-2 opacity-50"
+                strokeDasharray="5 6"
+              />
+              <circle
+                cx={activePosition.x}
+                cy={activePosition.y}
+                r="7"
+                className="fill-[#fffdf8] stroke-[#177763] stroke-4"
+              />
+              <rect
+                x={tooltipX}
+                y={tooltipY}
+                width={tooltipWidth}
+                height={tooltipHeight}
+                rx="8"
+                className="fill-[#102b27] drop-shadow-md"
+              />
+              <text
+                x={tooltipX + 16}
+                y={tooltipY + 28}
+                className="fill-[#fffdf8] text-sm font-bold"
+              >
+                {activePoint.year}年末時点
+              </text>
+              <text
+                x={tooltipX + 16}
+                y={tooltipY + 54}
+                className="fill-[#b8ded5] text-xs font-bold"
+              >
+                評価額
+              </text>
+              <text
+                x={tooltipX + tooltipWidth - 16}
+                y={tooltipY + 54}
+                textAnchor="end"
+                className="fill-[#fffdf8] text-xs font-bold"
+              >
+                {formatCurrency(activePoint.value)}
+              </text>
+              <text
+                x={tooltipX + 16}
+                y={tooltipY + 78}
+                className="fill-[#f0c77d] text-xs font-bold"
+              >
+                投資元本
+              </text>
+              <text
+                x={tooltipX + tooltipWidth - 16}
+                y={tooltipY + 78}
+                textAnchor="end"
+                className="fill-[#fffdf8] text-xs font-bold"
+              >
+                {formatCurrency(activePoint.principal)}
+              </text>
+              <text
+                x={tooltipX + 16}
+                y={tooltipY + 102}
+                className="fill-[#b8ded5] text-xs font-bold"
+              >
+                運用益
+              </text>
+              <text
+                x={tooltipX + tooltipWidth - 16}
+                y={tooltipY + 102}
+                textAnchor="end"
+                className="fill-[#fffdf8] text-xs font-bold"
+              >
+                {formatCurrency(activePoint.gain)}
+              </text>
+            </g>
             <circle
-              cx={chartWidth - chartPadding}
+              cx={chartWidth - chartPaddingX}
               cy={
-                chartPadding +
-                (chartHeight - chartPadding * 2) -
-                (finalPoint.value / maxValue) * (chartHeight - chartPadding * 2)
+                chartPaddingY + chartInnerHeight - (finalPoint.value / maxValue) * chartInnerHeight
               }
               r="6"
               className="fill-[#fffdf8] stroke-[#177763] stroke-4"
