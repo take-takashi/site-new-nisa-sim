@@ -7,6 +7,13 @@ type SimulationPoint = {
   gain: number;
 };
 
+type HouseholdType = "single" | "couple";
+
+type MemberInput = {
+  monthlyContribution: number;
+  annualReturnRate: number;
+};
+
 const MAX_NISA_CONTRIBUTION = 18_000_000;
 const CURRENCY_FORMATTER = new Intl.NumberFormat("ja-JP", {
   style: "currency",
@@ -32,17 +39,17 @@ function formatAxisCurrency(value: number): string {
   return CURRENCY_FORMATTER.format(value);
 }
 
-function simulateNisa(monthlyContribution: number, annualReturnRate: number, years: number) {
-  const monthlyRate = annualReturnRate / 100 / 12;
+function simulateMember(input: MemberInput, totalYears: number) {
+  const monthlyRate = input.annualReturnRate / 100 / 12;
   const points: SimulationPoint[] = [];
   let value = 0;
   let principal = 0;
 
   points.push({ year: 0, principal, value, gain: 0 });
 
-  for (let month = 1; month <= years * 12; month += 1) {
+  for (let month = 1; month <= totalYears * 12; month += 1) {
     const remainingRoom = Math.max(MAX_NISA_CONTRIBUTION - principal, 0);
-    const contribution = Math.min(monthlyContribution, remainingRoom);
+    const contribution = Math.min(input.monthlyContribution, remainingRoom);
 
     principal += contribution;
     value = (value + contribution) * (1 + monthlyRate);
@@ -58,6 +65,23 @@ function simulateNisa(monthlyContribution: number, annualReturnRate: number, yea
   }
 
   return points;
+}
+
+function combinePoints(pointGroups: SimulationPoint[][]) {
+  const pointCount = Math.max(...pointGroups.map((points) => points.length));
+
+  return Array.from({ length: pointCount }, (_, index) => {
+    const points = pointGroups.map((group) => group[index] ?? group.at(-1));
+    const principal = points.reduce((sum, point) => sum + (point?.principal ?? 0), 0);
+    const value = points.reduce((sum, point) => sum + (point?.value ?? 0), 0);
+
+    return {
+      year: points[0]?.year ?? index,
+      principal,
+      value,
+      gain: Math.max(value - principal, 0),
+    };
+  });
 }
 
 function buildPath(
@@ -98,16 +122,41 @@ function getPointPosition(
 }
 
 function App() {
+  const [householdType, setHouseholdType] = useState<HouseholdType>("single");
   const [monthlyContribution, setMonthlyContribution] = useState(50_000);
   const [annualReturnRate, setAnnualReturnRate] = useState(5);
   const [years, setYears] = useState(20);
+  const [partnerMonthlyContribution, setPartnerMonthlyContribution] = useState(50_000);
+  const [partnerAnnualReturnRate, setPartnerAnnualReturnRate] = useState(5);
   const [axisMaxManYen, setAxisMaxManYen] = useState(DEFAULT_AXIS_MAX_MAN_YEN);
+  const [showPrimaryInputs, setShowPrimaryInputs] = useState(true);
   const [activeYear, setActiveYear] = useState<number | null>(null);
 
-  const points = useMemo(
-    () => simulateNisa(monthlyContribution, annualReturnRate, years),
-    [monthlyContribution, annualReturnRate, years],
-  );
+  const totalYears = years;
+  const points = useMemo(() => {
+    const primaryPoints = simulateMember({ monthlyContribution, annualReturnRate }, totalYears);
+
+    if (householdType === "single") {
+      return primaryPoints;
+    }
+
+    const partnerPoints = simulateMember(
+      {
+        monthlyContribution: partnerMonthlyContribution,
+        annualReturnRate: partnerAnnualReturnRate,
+      },
+      totalYears,
+    );
+
+    return combinePoints([primaryPoints, partnerPoints]);
+  }, [
+    householdType,
+    monthlyContribution,
+    annualReturnRate,
+    partnerMonthlyContribution,
+    partnerAnnualReturnRate,
+    totalYears,
+  ]);
   const finalPoint = points.at(-1) ?? { year: 0, principal: 0, value: 0, gain: 0 };
   const chartWidth = 920;
   const chartHeight = 360;
@@ -140,21 +189,21 @@ function App() {
     y: chartPaddingY + (1 - index / Y_AXIS_TICK_COUNT) * chartInnerHeight,
     value: tickStep * index,
   }));
-  const yearTickStep = Math.max(1, Math.ceil(years / 5));
+  const yearTickStep = Math.max(1, Math.ceil(totalYears / 5));
   const yearTicks = Array.from(
     new Set([
       0,
       ...points.map((point) => point.year).filter((year) => year % yearTickStep === 0),
-      years,
+      totalYears,
     ]),
   ).map((year) => ({
     year,
-    x: chartPaddingX + (year / years) * chartInnerWidth,
+    x: chartPaddingX + (year / totalYears) * chartInnerWidth,
   }));
   const activePoint = points.find((point) => point.year === activeYear) ?? finalPoint;
   const activePosition = getPointPosition(
     activePoint,
-    years,
+    totalYears,
     maxValue,
     chartInnerWidth,
     chartInnerHeight,
@@ -172,8 +221,8 @@ function App() {
   const selectNearestPoint = (clientX: number, svgElement: SVGSVGElement) => {
     const { left, width } = svgElement.getBoundingClientRect();
     const svgX = ((clientX - left) / width) * chartWidth;
-    const year = Math.round(((svgX - chartPaddingX) / chartInnerWidth) * years);
-    setActiveYear(Math.min(Math.max(year, 0), years));
+    const year = Math.round(((svgX - chartPaddingX) / chartInnerWidth) * totalYears);
+    setActiveYear(Math.min(Math.max(year, 0), totalYears));
   };
 
   return (
@@ -198,7 +247,9 @@ function App() {
             </strong>
           </div>
           <div className="min-w-0 bg-[#fffdf8] p-[18px]">
-            <span className="text-[0.84rem] font-bold text-[#66736f]">投資元本</span>
+            <span className="text-[0.84rem] font-bold text-[#66736f]">
+              {householdType === "couple" ? "世帯元本" : "投資元本"}
+            </span>
             <strong className="mt-2 block text-[clamp(1rem,1.45vw,1.35rem)] leading-[1.15] font-extrabold whitespace-nowrap text-[#0f3d36]">
               {formatCurrency(finalPoint.principal)}
             </strong>
@@ -217,67 +268,154 @@ function App() {
           className="grid content-start gap-6 rounded-lg border border-[#d8d3c6] bg-[#fffdf8] p-6 shadow-[0_18px_40px_rgb(55_63_59_/_8%)] max-[620px]:p-[18px]"
           aria-label="シミュレーション条件"
         >
-          <label className="grid gap-2.5">
-            <span className="text-[0.84rem] font-bold text-[#66736f]">毎月の積立額</span>
-            <output className="text-[1.45rem] font-extrabold text-[#143c36]">
-              {formatCurrency(monthlyContribution)}
-            </output>
-            <input
-              className="w-full accent-[#177763]"
-              type="range"
-              min="10000"
-              max="300000"
-              step="10000"
-              value={monthlyContribution}
-              onChange={(event) => setMonthlyContribution(Number(event.target.value))}
-            />
-          </label>
+          <div className="grid gap-2.5">
+            <span className="text-[0.84rem] font-bold text-[#66736f]">世帯タイプ</span>
+            <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-[#d8d3c6] bg-[#f5f3ed] p-1">
+              <button
+                className={`rounded-md px-3 py-2 text-sm font-bold transition ${
+                  householdType === "single"
+                    ? "bg-[#177763] text-white shadow-sm"
+                    : "text-[#52605d]"
+                }`}
+                type="button"
+                onClick={() => setHouseholdType("single")}
+              >
+                一人
+              </button>
+              <button
+                className={`rounded-md px-3 py-2 text-sm font-bold transition ${
+                  householdType === "couple"
+                    ? "bg-[#177763] text-white shadow-sm"
+                    : "text-[#52605d]"
+                }`}
+                type="button"
+                onClick={() => setHouseholdType("couple")}
+              >
+                二人
+              </button>
+            </div>
+          </div>
 
-          <label className="grid gap-2.5">
-            <span className="text-[0.84rem] font-bold text-[#66736f]">想定年率</span>
-            <output className="text-[1.45rem] font-extrabold text-[#143c36]">
-              {annualReturnRate.toFixed(1)}%
-            </output>
-            <input
-              className="w-full accent-[#177763]"
-              type="range"
-              min="0"
-              max="10"
-              step="0.5"
-              value={annualReturnRate}
-              onChange={(event) => setAnnualReturnRate(Number(event.target.value))}
-            />
-          </label>
+          {householdType === "couple" ? (
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-extrabold text-[#143c36]">1人目</h3>
+              <label className="inline-flex items-center gap-2 text-xs font-bold text-[#66736f]">
+                <input
+                  className="size-4 accent-[#177763]"
+                  type="checkbox"
+                  checked={showPrimaryInputs}
+                  onChange={(event) => setShowPrimaryInputs(event.target.checked)}
+                />
+                条件を表示
+              </label>
+            </div>
+          ) : null}
 
-          <label className="grid gap-2.5">
-            <span className="text-[0.84rem] font-bold text-[#66736f]">運用期間</span>
-            <output className="text-[1.45rem] font-extrabold text-[#143c36]">{years}年</output>
-            <input
-              className="w-full accent-[#177763]"
-              type="range"
-              min="1"
-              max="40"
-              step="1"
-              value={years}
-              onChange={(event) => setYears(Number(event.target.value))}
-            />
-          </label>
+          {householdType === "single" || showPrimaryInputs ? (
+            <>
+              <label className="grid gap-2.5">
+                <span className="text-[0.84rem] font-bold text-[#66736f]">毎月の積立額</span>
+                <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                  {formatCurrency(monthlyContribution)}
+                </output>
+                <input
+                  className="w-full accent-[#177763]"
+                  type="range"
+                  min="10000"
+                  max="300000"
+                  step="10000"
+                  value={monthlyContribution}
+                  onChange={(event) => setMonthlyContribution(Number(event.target.value))}
+                />
+              </label>
 
-          <label className="grid gap-2.5">
-            <span className="text-[0.84rem] font-bold text-[#66736f]">縦軸の上限</span>
-            <output className="text-[1.45rem] font-extrabold text-[#143c36]">
-              {axisMaxManYen.toLocaleString("ja-JP")}万円
-            </output>
-            <input
-              className="w-full accent-[#177763]"
-              type="range"
-              min="500"
-              max="50000"
-              step="500"
-              value={axisMaxManYen}
-              onChange={(event) => setAxisMaxManYen(Number(event.target.value))}
-            />
-          </label>
+              <label className="grid gap-2.5">
+                <span className="text-[0.84rem] font-bold text-[#66736f]">想定年率</span>
+                <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                  {annualReturnRate.toFixed(1)}%
+                </output>
+                <input
+                  className="w-full accent-[#177763]"
+                  type="range"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value={annualReturnRate}
+                  onChange={(event) => setAnnualReturnRate(Number(event.target.value))}
+                />
+              </label>
+            </>
+          ) : null}
+
+          {householdType === "couple" ? (
+            <div className="grid gap-6 border-t border-[#e4ded0] pt-5">
+              <h3 className="mb-[-10px] text-sm font-extrabold text-[#143c36]">2人目</h3>
+
+              <label className="grid gap-2.5">
+                <span className="text-[0.84rem] font-bold text-[#66736f]">毎月の積立額</span>
+                <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                  {formatCurrency(partnerMonthlyContribution)}
+                </output>
+                <input
+                  className="w-full accent-[#177763]"
+                  type="range"
+                  min="10000"
+                  max="300000"
+                  step="10000"
+                  value={partnerMonthlyContribution}
+                  onChange={(event) => setPartnerMonthlyContribution(Number(event.target.value))}
+                />
+              </label>
+
+              <label className="grid gap-2.5">
+                <span className="text-[0.84rem] font-bold text-[#66736f]">想定年率</span>
+                <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                  {partnerAnnualReturnRate.toFixed(1)}%
+                </output>
+                <input
+                  className="w-full accent-[#177763]"
+                  type="range"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value={partnerAnnualReturnRate}
+                  onChange={(event) => setPartnerAnnualReturnRate(Number(event.target.value))}
+                />
+              </label>
+            </div>
+          ) : null}
+
+          <div className="grid gap-6 border-t border-[#e4ded0] pt-5">
+            <label className="grid gap-2.5">
+              <span className="text-[0.84rem] font-bold text-[#66736f]">運用期間</span>
+              <output className="text-[1.45rem] font-extrabold text-[#143c36]">{years}年</output>
+              <input
+                className="w-full accent-[#177763]"
+                type="range"
+                min="1"
+                max="40"
+                step="1"
+                value={years}
+                onChange={(event) => setYears(Number(event.target.value))}
+              />
+            </label>
+
+            <label className="grid gap-2.5">
+              <span className="text-[0.84rem] font-bold text-[#66736f]">縦軸の上限</span>
+              <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                {axisMaxManYen.toLocaleString("ja-JP")}万円
+              </output>
+              <input
+                className="w-full accent-[#177763]"
+                type="range"
+                min="500"
+                max="50000"
+                step="500"
+                value={axisMaxManYen}
+                onChange={(event) => setAxisMaxManYen(Number(event.target.value))}
+              />
+            </label>
+          </div>
         </form>
 
         <section
@@ -288,7 +426,9 @@ function App() {
             <div>
               <h2 className="mb-1.5 text-[1.2rem] font-bold text-[#102b27]">資産推移</h2>
               <p className="mb-0 text-[0.84rem] font-bold text-[#66736f]">
-                年間末時点の評価額と投資元本
+                {householdType === "couple"
+                  ? "世帯合算の年間末時点の評価額と投資元本"
+                  : "年間末時点の評価額と投資元本"}
               </p>
             </div>
             <div className="flex content-start justify-end gap-3.5 text-sm font-bold text-[#43504c] max-[620px]:justify-start">
