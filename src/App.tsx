@@ -110,37 +110,53 @@ function App() {
   }));
 
   return (
-    <main className="app-shell">
-      <section className="hero">
+    <main className="mx-auto w-[min(1180px,calc(100%-32px))] px-0 py-8 pt-10 max-[620px]:w-[min(100%-20px,1180px)] max-[620px]:pt-6">
+      <section className="grid grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)] items-end gap-8 px-0 pt-6 pb-8 max-[920px]:grid-cols-1 max-[620px]:gap-5 max-[620px]:pb-6">
         <div>
-          <p className="eyebrow">Tax-free investment projection</p>
-          <h1>新NISAシミュレーター</h1>
-          <p className="lead">
+          <p className="mb-3 text-xs font-bold tracking-[0.08em] text-[#42635b] uppercase">
+            Tax-free investment projection
+          </p>
+          <h1 className="mb-4 text-[clamp(2.25rem,6vw,5rem)] leading-none font-bold tracking-normal text-[#0b2f2a]">
+            新NISAシミュレーター
+          </h1>
+          <p className="mb-0 max-w-[720px] text-[1.05rem] leading-[1.8] text-[#52605d]">
             毎月の積立額、想定利回り、運用期間から、非課税枠内での元本と評価額の推移を試算します。
           </p>
         </div>
-        <div className="summary-grid">
-          <div>
-            <span>最終評価額</span>
-            <strong>{formatCurrency(finalPoint.value)}</strong>
+        <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-[#d7d2c4] bg-[#d7d2c4] max-[920px]:grid-cols-1">
+          <div className="min-w-0 bg-[#fffdf8] p-[18px]">
+            <span className="text-[0.84rem] font-bold text-[#66736f]">最終評価額</span>
+            <strong className="mt-2 block text-[clamp(1.15rem,2vw,1.7rem)] leading-[1.15] font-extrabold text-[#0f3d36]">
+              {formatCurrency(finalPoint.value)}
+            </strong>
           </div>
-          <div>
-            <span>投資元本</span>
-            <strong>{formatCurrency(finalPoint.principal)}</strong>
+          <div className="min-w-0 bg-[#fffdf8] p-[18px]">
+            <span className="text-[0.84rem] font-bold text-[#66736f]">投資元本</span>
+            <strong className="mt-2 block text-[clamp(1.15rem,2vw,1.7rem)] leading-[1.15] font-extrabold text-[#0f3d36]">
+              {formatCurrency(finalPoint.principal)}
+            </strong>
           </div>
-          <div>
-            <span>運用益</span>
-            <strong>{formatCurrency(finalPoint.gain)}</strong>
+          <div className="min-w-0 bg-[#fffdf8] p-[18px]">
+            <span className="text-[0.84rem] font-bold text-[#66736f]">運用益</span>
+            <strong className="mt-2 block text-[clamp(1.15rem,2vw,1.7rem)] leading-[1.15] font-extrabold text-[#0f3d36]">
+              {formatCurrency(finalPoint.gain)}
+            </strong>
           </div>
         </div>
       </section>
 
-      <section className="simulator-layout">
-        <form className="controls" aria-label="シミュレーション条件">
-          <label>
-            <span>毎月の積立額</span>
-            <output>{formatCurrency(monthlyContribution)}</output>
+      <section className="grid grid-cols-[340px_minmax(0,1fr)] items-stretch gap-6 max-[920px]:grid-cols-1">
+        <form
+          className="grid content-start gap-6 rounded-lg border border-[#d8d3c6] bg-[#fffdf8] p-6 shadow-[0_18px_40px_rgb(55_63_59_/_8%)] max-[620px]:p-[18px]"
+          aria-label="シミュレーション条件"
+        >
+          <label className="grid gap-2.5">
+            <span className="text-[0.84rem] font-bold text-[#66736f]">毎月の積立額</span>
+            <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+              {formatCurrency(monthlyContribution)}
+            </output>
             <input
+              className="w-full accent-[#177763]"
               type="range"
               min="10000"
               max="300000"
@@ -150,10 +166,13 @@ function App() {
             />
           </label>
 
-          <label>
-            <span>想定年率</span>
-            <output>{annualReturnRate.toFixed(1)}%</output>
+          <label className="grid gap-2.5">
+            <span className="text-[0.84rem] font-bold text-[#66736f]">想定年率</span>
+            <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+              {annualReturnRate.toFixed(1)}%
+            </output>
             <input
+              className="w-full accent-[#177763]"
               type="range"
               min="0"
               max="10"
@@ -163,10 +182,11 @@ function App() {
             />
           </label>
 
-          <label>
-            <span>運用期間</span>
-            <output>{years}年</output>
+          <label className="grid gap-2.5">
+            <span className="text-[0.84rem] font-bold text-[#66736f]">運用期間</span>
+            <output className="text-[1.45rem] font-extrabold text-[#143c36]">{years}年</output>
             <input
+              className="w-full accent-[#177763]"
               type="range"
               min="1"
               max="40"
@@ -176,28 +196,44 @@ function App() {
             />
           </label>
 
-          <div className="nisa-room">
-            <div>
-              <span>生涯投資枠の利用率</span>
-              <strong>{roomUsedRate.toFixed(1)}%</strong>
+          <div className="grid gap-3 pt-2">
+            <div className="flex justify-between gap-3">
+              <span className="text-[0.84rem] font-bold text-[#66736f]">生涯投資枠の利用率</span>
+              <strong className="text-[#143c36]">{roomUsedRate.toFixed(1)}%</strong>
             </div>
-            <progress value={roomUsedRate} max="100" />
+            <progress className="nisa-progress" value={roomUsedRate} max="100" />
           </div>
         </form>
 
-        <section className="chart-panel" aria-label="資産推移グラフ">
-          <div className="chart-header">
+        <section
+          className="min-w-0 rounded-lg border border-[#d8d3c6] bg-[#fffdf8] p-6 shadow-[0_18px_40px_rgb(55_63_59_/_8%)] max-[620px]:p-[18px]"
+          aria-label="資産推移グラフ"
+        >
+          <div className="mb-3 flex justify-between gap-5 max-[620px]:grid">
             <div>
-              <h2>資産推移</h2>
-              <p>年間末時点の評価額と投資元本</p>
+              <h2 className="mb-1.5 text-[1.2rem] font-bold text-[#102b27]">資産推移</h2>
+              <p className="mb-0 text-[0.84rem] font-bold text-[#66736f]">
+                年間末時点の評価額と投資元本
+              </p>
             </div>
-            <div className="legend">
-              <span className="value-line">評価額</span>
-              <span className="principal-line">投資元本</span>
+            <div className="flex content-start justify-end gap-3.5 text-sm font-bold text-[#43504c] max-[620px]:justify-start">
+              <span className="inline-flex items-center gap-2">
+                <span className="h-[3px] w-6 bg-[#177763]" aria-hidden="true" />
+                評価額
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="h-[3px] w-6 bg-[#d3922d]" aria-hidden="true" />
+                投資元本
+              </span>
             </div>
           </div>
 
-          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label="資産推移">
+          <svg
+            className="block h-auto w-full"
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            role="img"
+            aria-label="資産推移"
+          >
             <title>新NISAの資産推移</title>
             {chartTicks.map((tick) => (
               <g key={tick.y}>
@@ -206,15 +242,26 @@ function App() {
                   x2={chartWidth - chartPadding}
                   y1={tick.y}
                   y2={tick.y}
-                  className="grid-line"
+                  className="stroke-[#e4ded0] stroke-1"
                 />
-                <text x={chartPadding - 10} y={tick.y + 4} textAnchor="end">
+                <text
+                  className="fill-[#7a837f] text-[13px] font-bold max-[620px]:text-[11px]"
+                  x={chartPadding - 10}
+                  y={tick.y + 4}
+                  textAnchor="end"
+                >
                   {formatCurrency(tick.value)}
                 </text>
               </g>
             ))}
-            <path d={principalPath} className="principal-path" />
-            <path d={valuePath} className="value-path" />
+            <path
+              d={principalPath}
+              className="fill-none stroke-[#d3922d] stroke-4 [stroke-dasharray:9_9] [stroke-linecap:round] [stroke-linejoin:round]"
+            />
+            <path
+              d={valuePath}
+              className="fill-none stroke-[#177763] stroke-5 [stroke-linecap:round] [stroke-linejoin:round]"
+            />
             <circle
               cx={chartWidth - chartPadding}
               cy={
@@ -223,13 +270,13 @@ function App() {
                 (finalPoint.value / maxValue) * (chartHeight - chartPadding * 2)
               }
               r="6"
-              className="endpoint"
+              className="fill-[#fffdf8] stroke-[#177763] stroke-4"
             />
           </svg>
         </section>
       </section>
 
-      <p className="disclaimer">
+      <p className="mt-[22px] mb-0 text-[0.86rem] leading-[1.7] text-[#66736f]">
         この試算は入力値をもとにした概算です。手数料、税制変更、価格変動、売却タイミングは考慮していません。
       </p>
     </main>
