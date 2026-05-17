@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type SimulationPoint = {
   year: number;
@@ -20,8 +20,87 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat("ja-JP", {
   currency: "JPY",
   maximumFractionDigits: 0,
 });
+const DEFAULT_MONTHLY_CONTRIBUTION = 50_000;
+const DEFAULT_ANNUAL_RETURN_RATE = 5;
+const DEFAULT_YEARS = 20;
 const DEFAULT_AXIS_MAX_MAN_YEN = 2_500;
 const Y_AXIS_TICK_COUNT = 5;
+
+type SidebarState = {
+  householdType: HouseholdType;
+  monthlyContribution: number;
+  annualReturnRate: number;
+  years: number;
+  partnerMonthlyContribution: number;
+  partnerAnnualReturnRate: number;
+  axisMaxManYen: number;
+  showPrimaryInputs: boolean;
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function readNumberParam(
+  searchParams: URLSearchParams,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (!searchParams.has(name)) {
+    return fallback;
+  }
+
+  const value = Number(searchParams.get(name));
+
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return clamp(value, min, max);
+}
+
+function readSidebarState(): SidebarState {
+  const defaultState: SidebarState = {
+    householdType: "single",
+    monthlyContribution: DEFAULT_MONTHLY_CONTRIBUTION,
+    annualReturnRate: DEFAULT_ANNUAL_RETURN_RATE,
+    years: DEFAULT_YEARS,
+    partnerMonthlyContribution: 0,
+    partnerAnnualReturnRate: 0,
+    axisMaxManYen: DEFAULT_AXIS_MAX_MAN_YEN,
+    showPrimaryInputs: true,
+  };
+
+  if (typeof window === "undefined") {
+    return defaultState;
+  }
+
+  const searchParams = new URLSearchParams(window.location.search);
+  const householdType = searchParams.get("household") === "couple" ? "couple" : "single";
+  const partnerMonthlyContribution =
+    householdType === "couple" ? readNumberParam(searchParams, "p2Monthly", 0, 0, 300_000) : 0;
+  const partnerAnnualReturnRate =
+    householdType === "couple" ? readNumberParam(searchParams, "p2Rate", 0, 0, 10) : 0;
+
+  return {
+    householdType,
+    monthlyContribution: readNumberParam(
+      searchParams,
+      "p1Monthly",
+      DEFAULT_MONTHLY_CONTRIBUTION,
+      0,
+      300_000,
+    ),
+    annualReturnRate: readNumberParam(searchParams, "p1Rate", DEFAULT_ANNUAL_RETURN_RATE, 0, 10),
+    years: readNumberParam(searchParams, "years", DEFAULT_YEARS, 1, 40),
+    partnerMonthlyContribution,
+    partnerAnnualReturnRate,
+    axisMaxManYen: readNumberParam(searchParams, "axisMax", DEFAULT_AXIS_MAX_MAN_YEN, 500, 50_000),
+    showPrimaryInputs: searchParams.get("showP1") !== "0",
+  };
+}
 
 function formatCurrency(value: number): string {
   if (value >= 10_000) {
@@ -122,24 +201,28 @@ function getPointPosition(
 }
 
 function App() {
-  const [householdType, setHouseholdType] = useState<HouseholdType>("single");
-  const [monthlyContribution, setMonthlyContribution] = useState(50_000);
-  const [annualReturnRate, setAnnualReturnRate] = useState(5);
-  const [years, setYears] = useState(20);
-  const [partnerMonthlyContribution, setPartnerMonthlyContribution] = useState(50_000);
-  const [partnerAnnualReturnRate, setPartnerAnnualReturnRate] = useState(5);
-  const [axisMaxManYen, setAxisMaxManYen] = useState(DEFAULT_AXIS_MAX_MAN_YEN);
-  const [showPrimaryInputs, setShowPrimaryInputs] = useState(true);
+  const initialSidebarState = useMemo(readSidebarState, []);
+  const [householdType, setHouseholdType] = useState<HouseholdType>(
+    initialSidebarState.householdType,
+  );
+  const [monthlyContribution, setMonthlyContribution] = useState(
+    initialSidebarState.monthlyContribution,
+  );
+  const [annualReturnRate, setAnnualReturnRate] = useState(initialSidebarState.annualReturnRate);
+  const [years, setYears] = useState(initialSidebarState.years);
+  const [partnerMonthlyContribution, setPartnerMonthlyContribution] = useState(
+    initialSidebarState.partnerMonthlyContribution,
+  );
+  const [partnerAnnualReturnRate, setPartnerAnnualReturnRate] = useState(
+    initialSidebarState.partnerAnnualReturnRate,
+  );
+  const [axisMaxManYen, setAxisMaxManYen] = useState(initialSidebarState.axisMaxManYen);
+  const [showPrimaryInputs, setShowPrimaryInputs] = useState(initialSidebarState.showPrimaryInputs);
   const [activeYear, setActiveYear] = useState<number | null>(null);
 
   const totalYears = years;
   const points = useMemo(() => {
     const primaryPoints = simulateMember({ monthlyContribution, annualReturnRate }, totalYears);
-
-    if (householdType === "single") {
-      return primaryPoints;
-    }
-
     const partnerPoints = simulateMember(
       {
         monthlyContribution: partnerMonthlyContribution,
@@ -150,13 +233,36 @@ function App() {
 
     return combinePoints([primaryPoints, partnerPoints]);
   }, [
-    householdType,
     monthlyContribution,
     annualReturnRate,
     partnerMonthlyContribution,
     partnerAnnualReturnRate,
     totalYears,
   ]);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("household", householdType);
+    searchParams.set("p1Monthly", String(monthlyContribution));
+    searchParams.set("p1Rate", String(annualReturnRate));
+    searchParams.set("p2Monthly", String(partnerMonthlyContribution));
+    searchParams.set("p2Rate", String(partnerAnnualReturnRate));
+    searchParams.set("years", String(years));
+    searchParams.set("axisMax", String(axisMaxManYen));
+    searchParams.set("showP1", showPrimaryInputs ? "1" : "0");
+
+    window.history.replaceState(null, "", `${window.location.pathname}?${searchParams.toString()}`);
+  }, [
+    householdType,
+    monthlyContribution,
+    annualReturnRate,
+    partnerMonthlyContribution,
+    partnerAnnualReturnRate,
+    years,
+    axisMaxManYen,
+    showPrimaryInputs,
+  ]);
+
   const finalPoint = points.at(-1) ?? { year: 0, principal: 0, value: 0, gain: 0 };
   const chartWidth = 920;
   const chartHeight = 360;
@@ -278,7 +384,11 @@ function App() {
                     : "text-[#52605d]"
                 }`}
                 type="button"
-                onClick={() => setHouseholdType("single")}
+                onClick={() => {
+                  setHouseholdType("single");
+                  setPartnerMonthlyContribution(0);
+                  setPartnerAnnualReturnRate(0);
+                }}
               >
                 一人
               </button>
@@ -321,7 +431,7 @@ function App() {
                 <input
                   className="w-full accent-[#177763]"
                   type="range"
-                  min="10000"
+                  min="0"
                   max="300000"
                   step="10000"
                   value={monthlyContribution}
@@ -359,7 +469,7 @@ function App() {
                 <input
                   className="w-full accent-[#177763]"
                   type="range"
-                  min="10000"
+                  min="0"
                   max="300000"
                   step="10000"
                   value={partnerMonthlyContribution}
