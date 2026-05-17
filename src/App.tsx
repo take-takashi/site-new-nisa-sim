@@ -495,6 +495,13 @@ function App() {
       Math.max(currentSimulationEndAge, nextAge + 1),
     );
   };
+  const handleAccumulationYearsChange = (nextYears: number) => {
+    const nextWithdrawalStartAge = currentAge + nextYears;
+    setWithdrawalStartAge(nextWithdrawalStartAge);
+    setSimulationEndAge((currentSimulationEndAge) =>
+      Math.max(currentSimulationEndAge, nextWithdrawalStartAge + 1),
+    );
+  };
 
   return (
     <main className="mx-auto flex h-screen w-[min(1180px,calc(100%-32px))] flex-col overflow-hidden px-0 py-4 max-[920px]:h-auto max-[920px]:overflow-visible max-[620px]:w-[min(100%-20px,1180px)] max-[620px]:pt-6">
@@ -684,40 +691,60 @@ function App() {
           ) : null}
 
           <div className="grid gap-6 border-t border-[#e4ded0] pt-5">
-            <label className="grid gap-2.5">
-              <span className="text-[0.84rem] font-bold text-[#66736f]">現在年齢</span>
-              <output className="text-[1.45rem] font-extrabold text-[#143c36]">
-                {currentAge}歳
-              </output>
-              <input
-                className="w-full accent-[#177763]"
-                type="range"
-                min="18"
-                max={withdrawalStartAge - 1}
-                step="1"
-                value={currentAge}
-                onChange={(event) => setCurrentAge(Number(event.target.value))}
-              />
-            </label>
+            {simulationMode === "withdrawal" ? (
+              <>
+                <label className="grid gap-2.5">
+                  <span className="text-[0.84rem] font-bold text-[#66736f]">現在年齢</span>
+                  <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                    {currentAge}歳
+                  </output>
+                  <input
+                    className="w-full accent-[#177763]"
+                    type="range"
+                    min="18"
+                    max={withdrawalStartAge - 1}
+                    step="1"
+                    value={currentAge}
+                    onChange={(event) => setCurrentAge(Number(event.target.value))}
+                  />
+                </label>
 
-            <label className="grid gap-2.5">
-              <span className="text-[0.84rem] font-bold text-[#66736f]">取り崩し開始年齢</span>
-              <output className="text-[1.45rem] font-extrabold text-[#143c36]">
-                {withdrawalStartAge}歳
-              </output>
-              <input
-                className="w-full accent-[#177763]"
-                type="range"
-                min={currentAge + 1}
-                max="100"
-                step="1"
-                value={withdrawalStartAge}
-                onChange={(event) => handleWithdrawalStartAgeChange(Number(event.target.value))}
-              />
-              <span className="text-xs font-bold text-[#66736f]">
-                積立期間: {accumulationYears}年
-              </span>
-            </label>
+                <label className="grid gap-2.5">
+                  <span className="text-[0.84rem] font-bold text-[#66736f]">取り崩し開始年齢</span>
+                  <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                    {withdrawalStartAge}歳
+                  </output>
+                  <input
+                    className="w-full accent-[#177763]"
+                    type="range"
+                    min={currentAge + 1}
+                    max="100"
+                    step="1"
+                    value={withdrawalStartAge}
+                    onChange={(event) => handleWithdrawalStartAgeChange(Number(event.target.value))}
+                  />
+                  <span className="text-xs font-bold text-[#66736f]">
+                    積立期間: {accumulationYears}年
+                  </span>
+                </label>
+              </>
+            ) : (
+              <label className="grid gap-2.5">
+                <span className="text-[0.84rem] font-bold text-[#66736f]">運用期間</span>
+                <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                  {accumulationYears}年
+                </output>
+                <input
+                  className="w-full accent-[#177763]"
+                  type="range"
+                  min="1"
+                  max="40"
+                  step="1"
+                  value={accumulationYears}
+                  onChange={(event) => handleAccumulationYearsChange(Number(event.target.value))}
+                />
+              </label>
+            )}
 
             {simulationMode === "withdrawal" ? (
               <div className="grid gap-6 border-t border-[#e4ded0] pt-5">
