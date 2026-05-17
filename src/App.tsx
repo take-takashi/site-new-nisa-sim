@@ -8,6 +8,7 @@ type SimulationPoint = {
 };
 
 type HouseholdType = "single" | "couple";
+type SimulationMode = "accumulation" | "withdrawal";
 
 type MemberInput = {
   monthlyContribution: number;
@@ -24,16 +25,23 @@ const DEFAULT_MONTHLY_CONTRIBUTION = 50_000;
 const DEFAULT_ANNUAL_RETURN_RATE = 5;
 const DEFAULT_YEARS = 20;
 const DEFAULT_AXIS_MAX_MAN_YEN = 2_500;
+const DEFAULT_WITHDRAWAL_RATE = 4;
+const DEFAULT_WITHDRAWAL_YEARS = 30;
+const DEFAULT_WITHDRAWAL_RETURN_RATE = 3;
 const Y_AXIS_TICK_COUNT = 5;
 
 type SidebarState = {
   householdType: HouseholdType;
+  simulationMode: SimulationMode;
   monthlyContribution: number;
   annualReturnRate: number;
   years: number;
   partnerMonthlyContribution: number;
   partnerAnnualReturnRate: number;
   axisMaxManYen: number;
+  withdrawalRate: number;
+  withdrawalYears: number;
+  withdrawalReturnRate: number;
   showPrimaryInputs: boolean;
 };
 
@@ -64,12 +72,16 @@ function readNumberParam(
 function readSidebarState(): SidebarState {
   const defaultState: SidebarState = {
     householdType: "single",
+    simulationMode: "accumulation",
     monthlyContribution: DEFAULT_MONTHLY_CONTRIBUTION,
     annualReturnRate: DEFAULT_ANNUAL_RETURN_RATE,
     years: DEFAULT_YEARS,
     partnerMonthlyContribution: 0,
     partnerAnnualReturnRate: 0,
     axisMaxManYen: DEFAULT_AXIS_MAX_MAN_YEN,
+    withdrawalRate: DEFAULT_WITHDRAWAL_RATE,
+    withdrawalYears: DEFAULT_WITHDRAWAL_YEARS,
+    withdrawalReturnRate: DEFAULT_WITHDRAWAL_RETURN_RATE,
     showPrimaryInputs: true,
   };
 
@@ -79,6 +91,7 @@ function readSidebarState(): SidebarState {
 
   const searchParams = new URLSearchParams(window.location.search);
   const householdType = searchParams.get("household") === "couple" ? "couple" : "single";
+  const simulationMode = searchParams.get("mode") === "withdrawal" ? "withdrawal" : "accumulation";
   const partnerMonthlyContribution =
     householdType === "couple" ? readNumberParam(searchParams, "p2Monthly", 0, 0, 300_000) : 0;
   const partnerAnnualReturnRate =
@@ -86,6 +99,7 @@ function readSidebarState(): SidebarState {
 
   return {
     householdType,
+    simulationMode,
     monthlyContribution: readNumberParam(
       searchParams,
       "p1Monthly",
@@ -98,6 +112,21 @@ function readSidebarState(): SidebarState {
     partnerMonthlyContribution,
     partnerAnnualReturnRate,
     axisMaxManYen: readNumberParam(searchParams, "axisMax", DEFAULT_AXIS_MAX_MAN_YEN, 500, 50_000),
+    withdrawalRate: readNumberParam(searchParams, "withdrawalRate", DEFAULT_WITHDRAWAL_RATE, 0, 10),
+    withdrawalYears: readNumberParam(
+      searchParams,
+      "withdrawalYears",
+      DEFAULT_WITHDRAWAL_YEARS,
+      1,
+      60,
+    ),
+    withdrawalReturnRate: readNumberParam(
+      searchParams,
+      "withdrawalReturn",
+      DEFAULT_WITHDRAWAL_RETURN_RATE,
+      0,
+      10,
+    ),
     showPrimaryInputs: searchParams.get("showP1") !== "0",
   };
 }
@@ -163,6 +192,37 @@ function combinePoints(pointGroups: SimulationPoint[][]) {
   });
 }
 
+function simulateWithdrawal(
+  startingValue: number,
+  withdrawalRate: number,
+  annualReturnRate: number,
+  years: number,
+) {
+  const points: SimulationPoint[] = [];
+  const annualWithdrawal = startingValue * (withdrawalRate / 100);
+  let value = startingValue;
+  let cumulativeWithdrawal = 0;
+
+  points.push({ year: 0, principal: 0, value, gain: cumulativeWithdrawal });
+
+  for (let year = 1; year <= years; year += 1) {
+    const withdrawal = Math.min(annualWithdrawal, value);
+
+    cumulativeWithdrawal += withdrawal;
+    value = Math.max(value - withdrawal, 0);
+    value *= 1 + annualReturnRate / 100;
+
+    points.push({
+      year,
+      principal: cumulativeWithdrawal,
+      value,
+      gain: cumulativeWithdrawal,
+    });
+  }
+
+  return points;
+}
+
 function buildPath(
   points: SimulationPoint[],
   getValue: (point: SimulationPoint) => number,
@@ -205,6 +265,9 @@ function App() {
   const [householdType, setHouseholdType] = useState<HouseholdType>(
     initialSidebarState.householdType,
   );
+  const [simulationMode, setSimulationMode] = useState<SimulationMode>(
+    initialSidebarState.simulationMode,
+  );
   const [monthlyContribution, setMonthlyContribution] = useState(
     initialSidebarState.monthlyContribution,
   );
@@ -217,18 +280,26 @@ function App() {
     initialSidebarState.partnerAnnualReturnRate,
   );
   const [axisMaxManYen, setAxisMaxManYen] = useState(initialSidebarState.axisMaxManYen);
+  const [withdrawalRate, setWithdrawalRate] = useState(initialSidebarState.withdrawalRate);
+  const [withdrawalYears, setWithdrawalYears] = useState(initialSidebarState.withdrawalYears);
+  const [withdrawalReturnRate, setWithdrawalReturnRate] = useState(
+    initialSidebarState.withdrawalReturnRate,
+  );
   const [showPrimaryInputs, setShowPrimaryInputs] = useState(initialSidebarState.showPrimaryInputs);
   const [activeYear, setActiveYear] = useState<number | null>(null);
 
-  const totalYears = years;
-  const points = useMemo(() => {
-    const primaryPoints = simulateMember({ monthlyContribution, annualReturnRate }, totalYears);
+  const accumulationYears = years;
+  const accumulationPoints = useMemo(() => {
+    const primaryPoints = simulateMember(
+      { monthlyContribution, annualReturnRate },
+      accumulationYears,
+    );
     const partnerPoints = simulateMember(
       {
         monthlyContribution: partnerMonthlyContribution,
         annualReturnRate: partnerAnnualReturnRate,
       },
-      totalYears,
+      accumulationYears,
     );
 
     return combinePoints([primaryPoints, partnerPoints]);
@@ -237,33 +308,79 @@ function App() {
     annualReturnRate,
     partnerMonthlyContribution,
     partnerAnnualReturnRate,
-    totalYears,
+    accumulationYears,
   ]);
+  const accumulationFinalPoint = accumulationPoints.at(-1) ?? {
+    year: 0,
+    principal: 0,
+    value: 0,
+    gain: 0,
+  };
+  const withdrawalPoints = useMemo(
+    () =>
+      simulateWithdrawal(
+        accumulationFinalPoint.value,
+        withdrawalRate,
+        withdrawalReturnRate,
+        withdrawalYears,
+      ),
+    [accumulationFinalPoint.value, withdrawalRate, withdrawalReturnRate, withdrawalYears],
+  );
+  const points = simulationMode === "withdrawal" ? withdrawalPoints : accumulationPoints;
+  const totalYears = simulationMode === "withdrawal" ? withdrawalYears : accumulationYears;
 
   useEffect(() => {
     const searchParams = new URLSearchParams();
     searchParams.set("household", householdType);
+    searchParams.set("mode", simulationMode);
     searchParams.set("p1Monthly", String(monthlyContribution));
     searchParams.set("p1Rate", String(annualReturnRate));
     searchParams.set("p2Monthly", String(partnerMonthlyContribution));
     searchParams.set("p2Rate", String(partnerAnnualReturnRate));
     searchParams.set("years", String(years));
     searchParams.set("axisMax", String(axisMaxManYen));
+    searchParams.set("withdrawalRate", String(withdrawalRate));
+    searchParams.set("withdrawalYears", String(withdrawalYears));
+    searchParams.set("withdrawalReturn", String(withdrawalReturnRate));
     searchParams.set("showP1", showPrimaryInputs ? "1" : "0");
 
     window.history.replaceState(null, "", `${window.location.pathname}?${searchParams.toString()}`);
   }, [
     householdType,
+    simulationMode,
     monthlyContribution,
     annualReturnRate,
     partnerMonthlyContribution,
     partnerAnnualReturnRate,
     years,
     axisMaxManYen,
+    withdrawalRate,
+    withdrawalYears,
+    withdrawalReturnRate,
     showPrimaryInputs,
   ]);
 
   const finalPoint = points.at(-1) ?? { year: 0, principal: 0, value: 0, gain: 0 };
+  const isWithdrawalMode = simulationMode === "withdrawal";
+  const summaryValueLabel = isWithdrawalMode ? "最終残高" : "最終評価額";
+  const summaryPrincipalLabel = isWithdrawalMode
+    ? "開始資産"
+    : householdType === "couple"
+      ? "世帯元本"
+      : "投資元本";
+  const summaryGainLabel = isWithdrawalMode ? "累計取り崩し" : "運用益";
+  const summaryPrincipalValue = isWithdrawalMode
+    ? accumulationFinalPoint.value
+    : finalPoint.principal;
+  const summaryGainValue = isWithdrawalMode ? finalPoint.principal : finalPoint.gain;
+  const chartTitle = isWithdrawalMode ? "取り崩し推移" : "資産推移";
+  const chartDescription = isWithdrawalMode
+    ? "積立終了時の評価額を開始資産にした年末残高と累計取り崩し額"
+    : householdType === "couple"
+      ? "世帯合算の年間末時点の評価額と投資元本"
+      : "年間末時点の評価額と投資元本";
+  const valueLegendLabel = isWithdrawalMode ? "年末残高" : "評価額";
+  const principalLegendLabel = isWithdrawalMode ? "累計取り崩し" : "投資元本";
   const chartWidth = 920;
   const chartHeight = 360;
   const chartPaddingX = 96;
@@ -307,6 +424,12 @@ function App() {
     x: chartPaddingX + (year / totalYears) * chartInnerWidth,
   }));
   const activePoint = points.find((point) => point.year === activeYear) ?? finalPoint;
+  const activePointIndex = points.findIndex((point) => point.year === activePoint.year);
+  const previousActivePoint = activePointIndex > 0 ? points[activePointIndex - 1] : undefined;
+  const activeWithdrawal = Math.max(
+    activePoint.principal - (previousActivePoint?.principal ?? activePoint.principal),
+    0,
+  );
   const activePosition = getPointPosition(
     activePoint,
     totalYears,
@@ -347,23 +470,21 @@ function App() {
         </div>
         <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-[#d7d2c4] bg-[#d7d2c4] max-[920px]:grid-cols-1">
           <div className="min-w-0 bg-[#fffdf8] p-[18px]">
-            <span className="text-[0.84rem] font-bold text-[#66736f]">最終評価額</span>
+            <span className="text-[0.84rem] font-bold text-[#66736f]">{summaryValueLabel}</span>
             <strong className="mt-2 block text-[clamp(1rem,1.45vw,1.35rem)] leading-[1.15] font-extrabold whitespace-nowrap text-[#0f3d36]">
               {formatCurrency(finalPoint.value)}
             </strong>
           </div>
           <div className="min-w-0 bg-[#fffdf8] p-[18px]">
-            <span className="text-[0.84rem] font-bold text-[#66736f]">
-              {householdType === "couple" ? "世帯元本" : "投資元本"}
-            </span>
+            <span className="text-[0.84rem] font-bold text-[#66736f]">{summaryPrincipalLabel}</span>
             <strong className="mt-2 block text-[clamp(1rem,1.45vw,1.35rem)] leading-[1.15] font-extrabold whitespace-nowrap text-[#0f3d36]">
-              {formatCurrency(finalPoint.principal)}
+              {formatCurrency(summaryPrincipalValue)}
             </strong>
           </div>
           <div className="min-w-0 bg-[#fffdf8] p-[18px]">
-            <span className="text-[0.84rem] font-bold text-[#66736f]">運用益</span>
+            <span className="text-[0.84rem] font-bold text-[#66736f]">{summaryGainLabel}</span>
             <strong className="mt-2 block text-[clamp(1rem,1.45vw,1.35rem)] leading-[1.15] font-extrabold whitespace-nowrap text-[#0f3d36]">
-              {formatCurrency(finalPoint.gain)}
+              {formatCurrency(summaryGainValue)}
             </strong>
           </div>
         </div>
@@ -402,6 +523,34 @@ function App() {
                 onClick={() => setHouseholdType("couple")}
               >
                 二人
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-2.5">
+            <span className="text-[0.84rem] font-bold text-[#66736f]">シミュレーション</span>
+            <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-[#d8d3c6] bg-[#f5f3ed] p-1">
+              <button
+                className={`rounded-md px-3 py-2 text-sm font-bold transition ${
+                  simulationMode === "accumulation"
+                    ? "bg-[#177763] text-white shadow-sm"
+                    : "text-[#52605d]"
+                }`}
+                type="button"
+                onClick={() => setSimulationMode("accumulation")}
+              >
+                積立
+              </button>
+              <button
+                className={`rounded-md px-3 py-2 text-sm font-bold transition ${
+                  simulationMode === "withdrawal"
+                    ? "bg-[#177763] text-white shadow-sm"
+                    : "text-[#52605d]"
+                }`}
+                type="button"
+                onClick={() => setSimulationMode("withdrawal")}
+              >
+                取り崩し
               </button>
             </div>
           </div>
@@ -510,6 +659,58 @@ function App() {
               />
             </label>
 
+            {simulationMode === "withdrawal" ? (
+              <div className="grid gap-6 border-t border-[#e4ded0] pt-5">
+                <label className="grid gap-2.5">
+                  <span className="text-[0.84rem] font-bold text-[#66736f]">取り崩し率</span>
+                  <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                    {withdrawalRate.toFixed(1)}%
+                  </output>
+                  <input
+                    className="w-full accent-[#177763]"
+                    type="range"
+                    min="0"
+                    max="10"
+                    step="0.5"
+                    value={withdrawalRate}
+                    onChange={(event) => setWithdrawalRate(Number(event.target.value))}
+                  />
+                </label>
+
+                <label className="grid gap-2.5">
+                  <span className="text-[0.84rem] font-bold text-[#66736f]">取り崩し期間</span>
+                  <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                    {withdrawalYears}年
+                  </output>
+                  <input
+                    className="w-full accent-[#177763]"
+                    type="range"
+                    min="1"
+                    max="60"
+                    step="1"
+                    value={withdrawalYears}
+                    onChange={(event) => setWithdrawalYears(Number(event.target.value))}
+                  />
+                </label>
+
+                <label className="grid gap-2.5">
+                  <span className="text-[0.84rem] font-bold text-[#66736f]">取り崩し中の年率</span>
+                  <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+                    {withdrawalReturnRate.toFixed(1)}%
+                  </output>
+                  <input
+                    className="w-full accent-[#177763]"
+                    type="range"
+                    min="0"
+                    max="10"
+                    step="0.5"
+                    value={withdrawalReturnRate}
+                    onChange={(event) => setWithdrawalReturnRate(Number(event.target.value))}
+                  />
+                </label>
+              </div>
+            ) : null}
+
             <label className="grid gap-2.5">
               <span className="text-[0.84rem] font-bold text-[#66736f]">縦軸の上限</span>
               <output className="text-[1.45rem] font-extrabold text-[#143c36]">
@@ -534,21 +735,17 @@ function App() {
         >
           <div className="mb-3 flex justify-between gap-5 max-[620px]:grid">
             <div>
-              <h2 className="mb-1.5 text-[1.2rem] font-bold text-[#102b27]">資産推移</h2>
-              <p className="mb-0 text-[0.84rem] font-bold text-[#66736f]">
-                {householdType === "couple"
-                  ? "世帯合算の年間末時点の評価額と投資元本"
-                  : "年間末時点の評価額と投資元本"}
-              </p>
+              <h2 className="mb-1.5 text-[1.2rem] font-bold text-[#102b27]">{chartTitle}</h2>
+              <p className="mb-0 text-[0.84rem] font-bold text-[#66736f]">{chartDescription}</p>
             </div>
             <div className="flex content-start justify-end gap-3.5 text-sm font-bold text-[#43504c] max-[620px]:justify-start">
               <span className="inline-flex items-center gap-2">
                 <span className="h-[3px] w-6 bg-[#177763]" aria-hidden="true" />
-                評価額
+                {valueLegendLabel}
               </span>
               <span className="inline-flex items-center gap-2">
                 <span className="h-[3px] w-6 bg-[#d3922d]" aria-hidden="true" />
-                投資元本
+                {principalLegendLabel}
               </span>
             </div>
           </div>
@@ -561,7 +758,7 @@ function App() {
             onPointerMove={(event) => selectNearestPoint(event.clientX, event.currentTarget)}
             onPointerLeave={() => setActiveYear(null)}
           >
-            <title>新NISAの資産推移</title>
+            <title>新NISAの{chartTitle}</title>
             {chartTicks.map((tick) => (
               <g key={tick.y}>
                 <line
@@ -643,14 +840,16 @@ function App() {
                 y={tooltipY + 28}
                 className="fill-[#fffdf8] text-sm font-bold"
               >
-                {activePoint.year}年末時点
+                {isWithdrawalMode
+                  ? `取り崩し${activePoint.year}年目`
+                  : `${activePoint.year}年末時点`}
               </text>
               <text
                 x={tooltipX + 16}
                 y={tooltipY + 54}
                 className="fill-[#b8ded5] text-xs font-bold"
               >
-                評価額
+                {isWithdrawalMode ? "年末残高" : "評価額"}
               </text>
               <text
                 x={tooltipX + tooltipWidth - 16}
@@ -665,7 +864,7 @@ function App() {
                 y={tooltipY + 78}
                 className="fill-[#f0c77d] text-xs font-bold"
               >
-                投資元本
+                {isWithdrawalMode ? "年間取り崩し" : "投資元本"}
               </text>
               <text
                 x={tooltipX + tooltipWidth - 16}
@@ -673,14 +872,14 @@ function App() {
                 textAnchor="end"
                 className="fill-[#fffdf8] text-xs font-bold"
               >
-                {formatCurrency(activePoint.principal)}
+                {formatCurrency(isWithdrawalMode ? activeWithdrawal : activePoint.principal)}
               </text>
               <text
                 x={tooltipX + 16}
                 y={tooltipY + 102}
                 className="fill-[#b8ded5] text-xs font-bold"
               >
-                運用益
+                {isWithdrawalMode ? "累計取り崩し" : "運用益"}
               </text>
               <text
                 x={tooltipX + tooltipWidth - 16}
