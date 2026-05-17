@@ -13,6 +13,7 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat("ja-JP", {
   currency: "JPY",
   maximumFractionDigits: 0,
 });
+const DEFAULT_AXIS_MAX_MAN_YEN = 2_500;
 const Y_AXIS_TICK_COUNT = 5;
 
 function formatCurrency(value: number): string {
@@ -29,14 +30,6 @@ function formatAxisCurrency(value: number): string {
   }
 
   return CURRENCY_FORMATTER.format(value);
-}
-
-function getNiceStep(value: number): number {
-  const magnitude = 10 ** Math.floor(Math.log10(value));
-  const normalizedValue = value / magnitude;
-  const normalizedStep = [1, 2, 2.5, 5, 10].find((candidate) => normalizedValue <= candidate) ?? 10;
-
-  return normalizedStep * magnitude;
 }
 
 function simulateNisa(monthlyContribution: number, annualReturnRate: number, years: number) {
@@ -108,6 +101,7 @@ function App() {
   const [monthlyContribution, setMonthlyContribution] = useState(50_000);
   const [annualReturnRate, setAnnualReturnRate] = useState(5);
   const [years, setYears] = useState(20);
+  const [axisMaxManYen, setAxisMaxManYen] = useState(DEFAULT_AXIS_MAX_MAN_YEN);
   const [activeYear, setActiveYear] = useState<number | null>(null);
 
   const points = useMemo(
@@ -115,7 +109,6 @@ function App() {
     [monthlyContribution, annualReturnRate, years],
   );
   const finalPoint = points.at(-1) ?? { year: 0, principal: 0, value: 0, gain: 0 };
-  const roomUsedRate = Math.min(finalPoint.principal / MAX_NISA_CONTRIBUTION, 1) * 100;
   const chartWidth = 920;
   const chartHeight = 360;
   const chartPaddingX = 96;
@@ -123,9 +116,8 @@ function App() {
   const chartInnerWidth = chartWidth - chartPaddingX * 2;
   const chartInnerHeight = chartHeight - chartPaddingY * 2;
   const chartBottom = chartPaddingY + chartInnerHeight;
-  const rawMaxValue = Math.max(...points.map((point) => point.value), 1);
-  const tickStep = getNiceStep(rawMaxValue / Y_AXIS_TICK_COUNT);
-  const maxValue = tickStep * Y_AXIS_TICK_COUNT;
+  const maxValue = axisMaxManYen * 10_000;
+  const tickStep = maxValue / Y_AXIS_TICK_COUNT;
   const principalPath = buildPath(
     points,
     (point) => point.principal,
@@ -271,13 +263,21 @@ function App() {
             />
           </label>
 
-          <div className="grid gap-3 pt-2">
-            <div className="flex justify-between gap-3">
-              <span className="text-[0.84rem] font-bold text-[#66736f]">生涯投資枠の利用率</span>
-              <strong className="text-[#143c36]">{roomUsedRate.toFixed(1)}%</strong>
-            </div>
-            <progress className="nisa-progress" value={roomUsedRate} max="100" />
-          </div>
+          <label className="grid gap-2.5">
+            <span className="text-[0.84rem] font-bold text-[#66736f]">縦軸の上限</span>
+            <output className="text-[1.45rem] font-extrabold text-[#143c36]">
+              {axisMaxManYen.toLocaleString("ja-JP")}万円
+            </output>
+            <input
+              className="w-full accent-[#177763]"
+              type="range"
+              min="500"
+              max="50000"
+              step="500"
+              value={axisMaxManYen}
+              onChange={(event) => setAxisMaxManYen(Number(event.target.value))}
+            />
+          </label>
         </form>
 
         <section
