@@ -1,0 +1,31 @@
+[tools]
+node = "24.15.0"
+pnpm = "11.1.2"
+
+[tasks.install]
+description = "Install dependencies with pnpm"
+run = "pnpm install"
+
+[tasks.dev]
+description = "Start the Vite dev server"
+run = "pnpm exec vite --host 0.0.0.0"
+
+[tasks.build]
+description = "Type-check and build the static site"
+depends = ["check"]
+run = "pnpm exec vite build"
+
+[tasks.preview]
+description = "Preview the production build"
+run = "pnpm exec vite preview --host 0.0.0.0"
+
+[tasks.check]
+description = "Run TypeScript and Biome checks"
+run = [
+  "pnpm exec tsc --noEmit",
+  "pnpm exec biome check .",
+]
+
+[tasks.format]
+description = "Format files with Biome"
+run = "pnpm exec biome format --write ."
