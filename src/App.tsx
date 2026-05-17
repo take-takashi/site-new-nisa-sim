@@ -87,6 +87,9 @@ function App() {
   const chartWidth = 920;
   const chartHeight = 360;
   const chartPadding = 44;
+  const chartInnerWidth = chartWidth - chartPadding * 2;
+  const chartInnerHeight = chartHeight - chartPadding * 2;
+  const chartBottom = chartPadding + chartInnerHeight;
   const maxValue = Math.max(...points.map((point) => point.value), 1);
   const principalPath = buildPath(
     points,
@@ -107,6 +110,17 @@ function App() {
   const chartTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
     y: chartPadding + (1 - ratio) * (chartHeight - chartPadding * 2),
     value: maxValue * ratio,
+  }));
+  const yearTickStep = Math.max(1, Math.ceil(years / 5));
+  const yearTicks = Array.from(
+    new Set([
+      0,
+      ...points.map((point) => point.year).filter((year) => year % yearTickStep === 0),
+      years,
+    ]),
+  ).map((year) => ({
+    year,
+    x: chartPadding + (year / years) * chartInnerWidth,
   }));
 
   return (
@@ -251,6 +265,32 @@ function App() {
                   textAnchor="end"
                 >
                   {formatCurrency(tick.value)}
+                </text>
+              </g>
+            ))}
+            <line
+              x1={chartPadding}
+              x2={chartWidth - chartPadding}
+              y1={chartBottom}
+              y2={chartBottom}
+              className="stroke-[#cfc8b8] stroke-2"
+            />
+            {yearTicks.map((tick) => (
+              <g key={tick.year}>
+                <line
+                  x1={tick.x}
+                  x2={tick.x}
+                  y1={chartBottom}
+                  y2={chartBottom + 7}
+                  className="stroke-[#cfc8b8] stroke-2"
+                />
+                <text
+                  className="fill-[#66736f] text-[13px] font-bold max-[620px]:text-[11px]"
+                  x={tick.x}
+                  y={chartBottom + 26}
+                  textAnchor="middle"
+                >
+                  {tick.year}年
                 </text>
               </g>
             ))}
